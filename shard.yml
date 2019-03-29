@@ -1,0 +1,13 @@
+name: lxdManager
+version: 0.1.0
+
+authors:
+  - Bartłomiej Skoczeń <bartek_skoczen@protonmail.com>
+
+targets:
+  lxdManager:
+    main: src/lxdManager.cr
+
+crystal: 0.27.2
+
+license: MIT
