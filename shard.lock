@@ -1,0 +1,10 @@
+version: 1.0
+shards:
+  mongo:
+    github: datanoise/mongo.cr
+    commit: 86c9e530c0ac980ed7b15e653746bc5b6f2527fc
+
+  toml:
+    github: crystal-community/toml.cr
+    commit: 5935d7f5afeed8ba126418a9f85691b4067db85c
+

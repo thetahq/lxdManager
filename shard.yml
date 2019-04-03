@@ -8,6 +8,16 @@ targets:
   lxdManager:
     main: src/lxdManager.cr
 
+
+
+dependencies:
+  mongo:
+    github: datanoise/mongo.cr
+    branch: master
+  toml:
+    github: crystal-community/toml.cr
+    branch: master
+
 crystal: 0.27.2
 
 license: MIT
