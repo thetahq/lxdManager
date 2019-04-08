@@ -71,13 +71,10 @@ module LxdManager
   server = UNIXServer.new SERVER_SOCKET_PATH
   log.debug "Init complete!"
 
-  # net = lxd.networks.getInfo(lxd.networks.getList[0])
-  # log.debug net.name
-  # log.debug net.config
-  # log.debug net.managed
-  # st = net.getState
-  # log.debug st.hwaddr
-
+  ws = lxd.events.getEvents "operation,logging"
+  ws.on_message do |mess|
+    log.debug mess
+  end
   cont = lxd.containers.getInfo(lxd.containers.getList[0])
   log.debug cont.name
   log.debug cont.architecture

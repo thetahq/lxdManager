@@ -1,11 +1,13 @@
 require "http"
 require "json"
+require "base64"
 require "./api/**"
 
 class LXDSocket
-    @lxdSocket : UNIXSocket
+    getter lxdSocket : UNIXSocket
     @head : HTTP::Headers
     getter logger : Logger
+    getter lxdPath : String
     getter containers : Containers
     getter images : Images
     getter networks : Networks
@@ -13,9 +15,10 @@ class LXDSocket
     getter profiles : Profiles
     getter storagePools : StoragePools
     getter cluster : Cluster
+    getter events : Events
 
-    def initialize(@logger : Logger, lxdPath : String)
-        @lxdSocket = UNIXSocket.new lxdPath
+    def initialize(@logger : Logger, @lxdPath : String)
+        @lxdSocket = UNIXSocket.new @lxdPath
         @logger.info "LXDS: Connected to LXD Socket!"
         @head = HTTP::Headers.new
         @head.add "Host", "s"
@@ -28,6 +31,7 @@ class LXDSocket
         @profiles = Profiles.new
         @storagePools = StoragePools.new
         @cluster = Cluster.new
+        @events = Events.new
         @containers.lxd = self
         @images.lxd = self
         @networks.lxd = self
@@ -35,6 +39,7 @@ class LXDSocket
         @profiles.lxd = self
         @storagePools.lxd = self
         @cluster.lxd = self
+        @events.lxd = self
         @logger.debug "LXDS: Init complete!"
     end
 

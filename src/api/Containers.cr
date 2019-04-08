@@ -32,17 +32,19 @@ class Containers
         cpu = {} of String => Int64
         state["cpu"].as_h.each { |k, v| cpu[k] = v.as_i64 }
         disk = {} of String => Int64
-        state["disk"].as_h.each { |k, v| disk[k] = v.as_i64 }
+        state["disk"].as_h.each { |k, v| disk[k] = v.as_i64 } if state.dig?("disk") != nil
         m = state["memory"]
         mem = MemoryUsage.new(m["usage"].as_i64, m["usage_peak"].as_i64, m["swap_usage"].as_i64, m["swap_usage_peak"].as_i64)
         net = {} of String => Networks::NetworkState
-        state["network"].as_h.each do |k, v|
-            nadd = [] of Networks::NetworkAddress
-            v["addresses"].as_a.each { |a| nadd << Networks::NetworkAddress.new(a["family"] == "inet6" ? Socket::Family::INET6 : Socket::Family::INET, a["address"].to_s, a["netmask"].to_s.to_i16, a["scope"].to_s) }
-            count = {} of String => Int64
-            v["counters"].as_h.each { |k, v| count[k] = v.as_i64 }
-            ty = v["type"] == "broadcast" ? Networks::NetworkStateType::Broadcast : Networks::NetworkStateType::None
-            net[k] = Networks::NetworkState.new(nadd, count, v["hwaddr"].to_s, v["host_name"].to_s, v["mtu"].as_i, v["state"].to_s, ty)
+        if state.dig?("network") != nil
+            state["network"].as_h.each do |k, v|
+                nadd = [] of Networks::NetworkAddress
+                v["addresses"].as_a.each { |a| nadd << Networks::NetworkAddress.new(a["family"] == "inet6" ? Socket::Family::INET6 : Socket::Family::INET, a["address"].to_s, a["netmask"].to_s.to_i16, a["scope"].to_s) }
+                count = {} of String => Int64
+                v["counters"].as_h.each { |k, v| count[k] = v.as_i64 }
+                ty = v["type"] == "broadcast" ? Networks::NetworkStateType::Broadcast : Networks::NetworkStateType::None
+                net[k] = Networks::NetworkState.new(nadd, count, v["hwaddr"].to_s, v["host_name"].to_s, v["mtu"].as_i, v["state"].to_s, ty)
+            end
         end
         ContainerState.new(state["status"].to_s, state["status_code"].as_i, cpu, disk, mem, net, state["pid"].as_i64, state["processes"].as_i)
     end
