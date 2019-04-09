@@ -5,12 +5,14 @@ class Networks
     setter lxd : LXDSocket?
 
     def getList : Array(String) # GET /1.0/networks
-        l = Array(String).new
-        JSON.parse(@lxd.not_nil!.get("/1.0/networks").body)["metadata"].as_a.each { |entry| l << entry.to_s }
+        l = [] of String
+        json = JSON.parse(@lxd.not_nil!.get("/1.0/networks").body)
+        return l if json["metadata"].size == 0
+        json["metadata"].as_a.each { |entry| l << entry.to_s }
         l
     end
 
-    def getInfo(name : String) : Network # GET /1.0/networks/<name>
+    def get(name : String) : Network # GET /1.0/networks/<name>
         json = JSON.parse @lxd.not_nil!.get("/1.0/networks/#{name.gsub("/1.0/networks/", "")}").body
         @lxd.not_nil!.logger.debug json
         net = json["metadata"]
@@ -56,7 +58,7 @@ class Networks
         Broadcast
     end
 
-    struct NetworkState
+    struct NetworkState # @ToDo: Move to Common (maybe?)
         property addressses, counters, hwaddr, host_name, mtu, state, type
 
         def initialize(@addresses : Array(NetworkAddress), @counters : Hash(String, Int64), @hwaddr : String, @host_name : String, @mtu : Int32, @state : String, @type : NetworkStateType)

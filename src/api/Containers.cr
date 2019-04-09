@@ -5,12 +5,14 @@ class Containers
     setter lxd : LXDSocket?
 
     def getList : Array(String) # GET /1.0/containers
-        l = Array(String).new
-        JSON.parse(@lxd.not_nil!.get("/1.0/containers").body)["metadata"].as_a.each { |entry| l << entry.to_s }
+        l = [] of String
+        json = JSON.parse(@lxd.not_nil!.get("/1.0/containers").body)
+        return l if json["metadata"].size == 0
+        json["metadata"].as_a.each { |entry| l << entry.to_s }
         l
     end
 
-    def getInfo(name : String) : Container # GET /1.0/containers/<name>
+    def get (name : String) : Container # GET /1.0/containers/<name>
         json = JSON.parse @lxd.not_nil!.get("/1.0/containers/#{name.gsub("/1.0/containers/","")}").body
         @lxd.not_nil!.logger.debug json
         cont = json["metadata"]
@@ -60,7 +62,7 @@ class Containers
         end
     end
 
-    struct ContainerDevice # @ToDo: Rewrite to use JSON::Any on initialize
+    struct ContainerDevice # @ToDo: Rewrite to use JSON::Any on initialize # @ToDo: Move to Common
         property path, type, nictype, parent
 
         def initialize(@path : String, @type : String, @nictype : String = "", parent : String = "") # @ToDo: Make type enum

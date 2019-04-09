@@ -71,18 +71,16 @@ module LxdManager
   server = UNIXServer.new SERVER_SOCKET_PATH
   log.debug "Init complete!"
 
-  ws = lxd.events.getEvents "operation,logging"
+  #S LXD Logger
+
+  ws = lxd.getEvents "operation,logging"
   ws.on_message do |mess|
-    log.debug mess
+    log.debug mess # @ToDo: Rewrite into proper logger
   end
-  cont = lxd.containers.getInfo(lxd.containers.getList[0])
-  log.debug cont.name
-  log.debug cont.architecture
-  log.debug cont.status
-  state = cont.getState
-  log.debug state.cpu
-  log.debug state.memory
-  log.debug state.network
+
+  #S Tests (for development)
+
+  # None
 
   #S Server Socket main loop
 
