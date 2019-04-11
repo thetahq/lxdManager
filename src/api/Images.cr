@@ -13,12 +13,13 @@ class Images
     end
 
     def get(fingerprint : String) : Image # GET /1.0/images/<fingerprint>
-        json = JSON.parse @lxd.not_nil!.get("/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}").body
+        res = @lxd.not_nil!.get "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}"
+        json = JSON.parse res.body
         @lxd.not_nil!.logger.debug json
         img = json["metadata"]
         fingerprint = img["fingerprint"].to_s
         als = [] of Alias
-        img["aliases"].as_a.each { |a| als << Alias.new(a["name"].to_s, a["description"].to_s, fingerprint) }
+        img["aliases"].as_a.each { |a| als << Alias.new(a["name"].to_s, a["description"].to_s, fingerprint, self) }
         p = img["properties"]
         pro = ImageProperties.new(p["architecture"].to_s, p["description"].to_s, p["os"].to_s, p["release"].to_s)
         up = img["update_source"]
@@ -30,17 +31,43 @@ class Images
         Image.new(als, img["architecture"].to_s, img["auto_update"].as_bool, img["cached"].as_bool, fingerprint, img["filename"].to_s, pro, update, img["public"].as_bool, img["size"].as_i64, cat.nil? ? Time.new : cat, eat.nil? ? Time.new : eat, luat.nil? ? Time.new : luat, uat.nil? ? Time.new : uat)
     end
 
-    def getAliasesList : Array(String) # GET /1.0/images/aliases 
+    def getAliasList : Array(String) # GET /1.0/images/aliases 
         l = [] of String
-        JSON.parse(@lxd.not_nil!.get("/1.0/images/aliases").body)["metadata"].as_a.each { |a| l << a.to_s }
+        json = JSON.parse(@lxd.not_nil!.get("/1.0/images/aliases").body)
+        return l if json["metadata"].size == 0
+        json["metadata"].as_a.each { |a| l << a.to_s }
         l
     end
 
-    def getAliasInfo(name : String) : Alias # GET /1.0/images/aliases/<name>
-        json = JSON.parse @lxd.not_nil!.get("/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}").body
+    def addAlias(name : String, description : String, target : String) # POST /1.0/images/aliases
+        a = { "name" => name, "description" => description, "target" => target.gsub("/1.0/images/", "") }
+        @lxd.not_nil!.logger.debug a.to_json
+        res = @lxd.not_nil!.post "/1.0/images/aliases", a.to_json
+        raise Common::NotFoundException.new "Image fingerptint not found!" if res.status_code == 404
+    end
+
+    def getAlias(name : String) : Alias # GET /1.0/images/aliases/<name>
+        res = @lxd.not_nil!.get "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
+        json = JSON.parse res.body
         @lxd.not_nil!.logger.debug json
         a = json["metadata"]
-        Alias.new(a["name"].to_s, a["description"].to_s, a["target"].to_s)
+        Alias.new(a["name"].to_s, a["description"].to_s, a["target"].to_s, self)
+    end
+
+    def renameAlias(currentName : String, newName : String)
+        res = @lxd.not_nil!.post "/1.0/images/aliases/#{currentName.gsub("/1.0/images/aliases/","")}", { "name" => newName }.to_json
+    end
+
+    def updateAlias(name : String, description : String = "", target : String = "") # PATCH /1.0/images/aliases/<name>
+        return if description == "" && target == ""
+        payload = {} of String => String
+        payload["description"] = description if description != ""
+        payload["target"] = target if target != ""
+        res = @lxd.not_nil!.patch "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}", payload.to_json
+    end
+
+    def deleteAlias(name : String) # DELETE /1.0/images/aliases/<name>
+        res = @lxd.not_nil!.delete "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
     end
 
     struct Image
@@ -67,7 +94,15 @@ class Images
     struct Alias
         property name, description, target
 
-        def initialize(@name : String, @description : String, @target : String)
+        def initialize(@name : String, @description : String, @target : String, @img : Images)
+        end
+
+        def delete
+            @img.deleteAlias @name
+        end
+
+        def rename(newName : String)
+            @img.renameAlias @name, newName
         end
     end
 end

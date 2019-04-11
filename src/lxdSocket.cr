@@ -37,11 +37,11 @@ class LXDSocket
         @storagePools.lxd = self
         @cluster.lxd = self
         testConnection
-        @logger.debug "LXDS: Init complete!"
+        @logger.info "LXDS: Init complete!"
     end
 
     def getWebSocket(path : String) : HTTP::WebSocket
-        @logger.debug "LXDS: Creating new WebSocket on #{path}"
+        @logger.info "LXDS: Creating new WebSocket on #{path}"
         uws = UNIXSocket.new @lxdPath
         rKey = Base64.strict_encode(StaticArray(UInt8, 16).new { rand(256).to_u8 })
         head = @head.clone
@@ -63,17 +63,25 @@ class LXDSocket
         ws
     end
 
-    def get(path : String) : HTTP::Client::Response
-        @logger.debug "LXDS: Requesting GET #{path}"
-        HTTP::Request.new("GET", path, @head).to_io(@lxdSocket)
-        HTTP::Client::Response.from_io(@lxdSocket)
+    macro methods
+        {% for name in ["get", "post", "put", "patch", "delete"] %}
+            {% if name == "get" || name == "delete" %}
+            def {{name.id}}(path : String) : HTTP::Client::Response
+            {% else %}
+            def {{name.id}}(path : String, body : String) : HTTP::Client::Rescponse
+            {% end %}
+                @logger.info "LXDS: Requesting #{"{{name.id}}".upcase} #{path}"
+                {% if name == "get" || name == "delete" %}
+                HTTP::Request.new("{{name.id}}".upcase, path, @head).to_io(@lxdSocket)
+                {% else %}
+                HTTP::Request.new("{{name.id}}".upcase, path, @head, body).to_io(@lxdSocket)
+                {% end %}
+                Common.errorHandler HTTP::Client::Response.from_io(@lxdSocket), path, @logger
+            end
+        {% end %}
     end
 
-    def post(path : String, body : String) : HTTP::Client::Response
-        @logger.debug "LXDS: Requesting POST #{path} with body #{body}"
-        HTTP::Request.new("POST", path, @head, body).to_io(@lxdSocket)
-        HTTP::Client::Response.from_io(@lxdSocket)
-    end
+    methods
 
     def testConnection # GET / # Note: This is only a (socket) sanity check
         res = get("/")
@@ -83,8 +91,8 @@ class LXDSocket
         end
     end
 
-    def getEvents(type : String) : HTTP::WebSocket # GET /1.0/events
-        getWebSocket "/1.0/events?type=#{type}"
+    def getEvents(type : String? = nil) : HTTP::WebSocket # GET /1.0/events
+        getWebSocket "/1.0/events#{type.nil? ? "" : "?type=#{type}"}"
     end
 
     def getServerConfiguration : ServerConfiguration # GET /1.0/

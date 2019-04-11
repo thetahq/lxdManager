@@ -73,7 +73,7 @@ module LxdManager
 
   #S LXD Logger
 
-  ws = lxd.getEvents "operation,logging"
+  ws = lxd.getEvents
   ws.on_message do |mess|
     log.debug mess # @ToDo: Rewrite into proper logger
   end
@@ -81,6 +81,10 @@ module LxdManager
   #S Tests (for development)
 
   # None
+  log.debug lxd.images.getAliasList
+  lxd.images.deleteAlias("a")
+  log.debug lxd.images.getAliasList
+  # lxd.images.addAlias("a", "test", lxd.images.getList[0])
 
   #S Server Socket main loop
 
