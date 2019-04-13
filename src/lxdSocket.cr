@@ -1,6 +1,7 @@
 require "http"
 require "json"
 require "base64"
+require "json/mapping.cr"
 require "./api/**"
 
 class LXDSocket
@@ -14,6 +15,11 @@ class LXDSocket
     getter profiles : Profiles
     getter storagePools : StoragePools
     getter cluster : Cluster
+
+    @@instance : LXDSocket?
+    def self.i
+        @@instance
+    end
 
     def initialize(@logger : Logger, @lxdPath : String)
         @lxdSocket = UNIXSocket.new @lxdPath
@@ -38,6 +44,7 @@ class LXDSocket
         @cluster.lxd = self
         testConnection
         @logger.info "LXDS: Init complete!"
+        @@instance = self
     end
 
     def getWebSocket(path : String) : HTTP::WebSocket
@@ -68,7 +75,7 @@ class LXDSocket
             {% if name == "get" || name == "delete" %}
             def {{name.id}}(path : String) : HTTP::Client::Response
             {% else %}
-            def {{name.id}}(path : String, body : String) : HTTP::Client::Rescponse
+            def {{name.id}}(path : String, body : String) : HTTP::Client::Response
             {% end %}
                 @logger.info "LXDS: Requesting #{"{{name.id}}".upcase} #{path}"
                 {% if name == "get" || name == "delete" %}
@@ -76,7 +83,7 @@ class LXDSocket
                 {% else %}
                 HTTP::Request.new("{{name.id}}".upcase, path, @head, body).to_io(@lxdSocket)
                 {% end %}
-                Common.errorHandler HTTP::Client::Response.from_io(@lxdSocket), path, @logger
+                Common.errorHandler HTTP::Client::Response.from_io(@lxdSocket), "{{name.id}}".upcase, path, @logger
             end
         {% end %}
     end
@@ -96,64 +103,70 @@ class LXDSocket
     end
 
     def getServerConfiguration : ServerConfiguration # GET /1.0/
-        conf = JSON.parse(get("/1.0").body)["metadata"]
-        apie = [] of String
-        conf["api_extensions"].as_a.each { |e| apie << e.to_s }
-        aum = [] of String
-        conf["auth_methods"].as_a.each { |a| aum << a.to_s }
-        co = {} of String => String
-        conf["config"].as_h.each { |k, v| co[k] = v.to_s }
-        env = conf["environment"]
-        add = [] of String
-        env["addresses"].as_a.each { |a| add << a.to_s }
-        arch = [] of String
-        env["architectures"].as_a.each { |a| arch << a.to_s }
-        kef = {} of String => String
-        env["kernel_features"].as_h.each { |k, v| kef[k] = v.to_s }
-        e = ServerConfiguration::Environment.new(add, arch, env["certificate"].to_s, env["certificate_fingerprint"].to_s, env["driver"].to_s, env["driver_version"].to_s, env["kernel"].to_s, env["kernel_architecture"].to_s, kef, env["kernel_version"].to_s, env["project"].to_s, env["server"].to_s, env["server_clustered"].as_bool, env["server_name"].to_s, env["server_pid"].as_i, env["server_version"].to_s, env["storage"].to_s, env["storage_version"].to_s)
-        ServerConfiguration.new(apie, conf["api_status"].to_s, conf["api_version"].to_s, conf["auth"].to_s, aum, co, e, conf["public"].as_bool)
+        ServerConfiguration.from_json JSON.parse(get("/1.0").body)["metadata"].to_json
     end
 
     struct ServerConfiguration
-        property api_extensions, api_status, api_version, auth, auth_methods, config, environment, public
-
-        def initialize(@api_extensions : Array(String), @api_status : String, @api_version : String, @auth : String, @auth_methods : Array(String), @config : Hash(String, String), @environment : Environment, @public : Bool)
-        end
+        JSON.mapping(
+            api_extensions: Array(String),
+            api_status: String,
+            api_version: String,
+            auth: String,
+            auth_methods: Array(String),
+            config: Hash(String, String),
+            environment: Environment,
+            public: Bool
+        )
 
         struct Environment
-            property addresses, architectures, certificate, certificate_fingerprint, driver, driver_version, kernel, kernel_architecture, kernel_features, kernel_version, project, server, server_clustered, server_name, server_pid, server_version, storage, storage_version
-
-            def initialize(@adresses : Array(String), @archtectures : Array(String), @certificate : String, @certificate_fingerprint : String, @driver : String, @driver_verion : String, @kernel : String, @kernel_architecture : String, @kernel_features : Hash(String, String), @kernel_version : String, @project : String, @server : String, @server_clustered : Bool, @server_name : String, @server_pid : Int32, @server_version : String, @storage : String, @storage_version : String)
-            end
+            JSON.mapping(
+                addresses: Array(String),
+                architectures: Array(String),
+                certificate: String,
+                certificate_fingerprint: String,
+                driver: String,
+                driver_version: String,
+                kernel: String,
+                kernel_architecture: String,
+                kernel_features: Hash(String, String),
+                kernel_version: String,
+                project: String,
+                server: String,
+                server_clustered: Bool,
+                server_name: String,
+                server_pid: UInt32,
+                server_version: String,
+                storage: String,
+                storage_version: String
+            )
         end
     end
 
     def getServerResources : ServerResources # GET /1.0/resources
-        res = JSON.parse(get("/1.0/resources").body)["metadata"]
-        socs = [] of ServerResources::CPU::Socket
-        res["cpu"]["sockets"].as_a.each { |s| socs << ServerResources::CPU::Socket.new(s["cores"].as_i.to_i8, s["frequency"].as_i.to_i16, s["frequency_turbo"].as_i.to_i16, s["name"].to_s, s["vendor"].to_s, s["threads"].as_i.to_i8) }
-        cpu = ServerResources::CPU.new(socs, res["cpu"]["total"].as_i.to_i8)
-        mem = StoragePools::Resource.new(res["memory"]["used"].as_i64, res["memory"]["total"].as_i64)
-        ServerResources.new(cpu, mem)
+        ServerResources.from_json JSON.parse(get("/1.0/resources").body)["metadata"].to_json
     end
 
     struct ServerResources
-        property cpu, memory
-
-        def initialize(@cpu : CPU, @memory : StoragePools::Resource)
-        end
+        JSON.mapping(
+            cpu: CPU,
+            memory: Common::Resource
+        )
 
         struct CPU
-            property sockets, total
-    
-            def initialize(@sockets : Array(Socket), @total : Int8)
-            end
+            JSON.mapping(
+                sockets: Array(Socket),
+                total: UInt8
+            )
 
             struct Socket
-                property cores, frequency, frequency_turbo, name, vendor, threads
-                
-                def initialize(@cores : Int8, @frequency : Int16, @frequency_turbo : Int16, @name : String, @vendor : String, @threads : Int8)
-                end
+                JSON.mapping(
+                    cores: UInt8,
+                    frequency: UInt16,
+                    frequency_turbo: UInt16,
+                    name: String,
+                    vendor: String,
+                    threads: UInt8
+                )
             end
         end
     end

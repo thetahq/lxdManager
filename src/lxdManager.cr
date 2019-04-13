@@ -81,10 +81,15 @@ module LxdManager
   #S Tests (for development)
 
   # None
-  log.debug lxd.images.getAliasList
-  lxd.images.deleteAlias("a")
-  log.debug lxd.images.getAliasList
-  # lxd.images.addAlias("a", "test", lxd.images.getList[0])
+  # log.info lxd.containers.getList
+  # c = {} of String => String
+  # lxd.networks.getList.each do |n| 
+  #   net = lxd.networks.get(n)
+  #   log.info net
+  #   log.info net.getState if net.managed
+  #   c = net.config if net.name = "ALO"
+  # end
+  # lxd.images.deleteAlias("a")
 
   #S Server Socket main loop
 

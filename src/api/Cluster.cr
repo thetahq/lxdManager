@@ -7,10 +7,23 @@ class Cluster
     def get : Cluster # GET /1.0/cluster
         json = JSON.parse @lxd.not_nil!.get("/1.0/cluster").body
         @lxd.not_nil!.logger.debug json
-        cl = json["metadata"]
-        mem = [] of MemberConfig
-        cl["member_config"].as_a.each { |m| mem << MemberConfig.new(m["entity"].to_s, m["name"].to_s, m["key"].to_s, m["value"].to_s) }
-        Cluster.new(cl["server_name"].to_s, cl["enabled"].as_bool, mem, cl["description"].to_s)
+        Cluster.from_json json["metadata"].to_json
+    end
+
+    def bootstrap(name : String) : String # PUT /1.0/cluster
+        res = @lxd.not_nil!.put "/1.0/cluster", { "server_name" => name, "enabled" => true }.to_json
+        JSON.parse(res.body)["operation"].to_s
+    end
+
+    def join(server_name : String, server_address : String, cluster_address : String, cluster_certificate : String, cluster_password : String, member_config : Array(MemberConfig)) : String # PUT /1.0/cluster
+        payload = {"server_name" => server_name, "server_address" => server_address, "cluster_address" => cluster_address, "cluster_certificate" => cluster_certificate, "cluster_password" => cluster_password, "member_config" => member_config}
+        res = @lxd.not_nil!.put "/1.0/cluster", payload.to_json
+        j = JSON.parse res.body
+        j["type"] == "async" ? j["operation"].to_s : j["metadata"].to_s
+    end
+
+    def disable # PUT /1.0/cluster
+        @lxd.not_nil!.put "/1.0/cluster", { "enabled" => false }.to_json
     end
 
     def getMembers : Array(String) # GET /1.0/cluster/members
@@ -24,28 +37,47 @@ class Cluster
     def getMember(name : String) : Member # GET /1.0/cluster/members/<name>
         json = JSON.parse @lxd.not_nil!.get("/1.0/cluster/members/#{name.gsub("/1.0/cluster/members/","")}").body
         @lxd.not_nil!.logger.debug json
-        mem = json["metadata"]
-        Member.new(mem["server_name"].to_s, mem["url"].to_s, mem["database"].as_bool, mem["status"].to_s, mem["message"].to_s)
+        Member.from_json json["metadata"].to_json
+    end
+
+    def renameMember(name : String, newName : String) # PUT /1.0/cluster/members/<name>
+        payload = { "server_name" => newName }
+        @lxd.not_nil!.put "/1.0/cluster/members/#{name.gsub("/1.0/cluster/members/","")}", payload.to_json
+    end
+
+    def deleteMemebr(name : String, force : Bool = false) : String # DELETE /1.0/cluster/members/<name>
+        res = @lxd.not_nil!.delte "/1.0/cluster/members/#{name.gsub("/1.0/cluster/members/", "")}#{force ? "?force=1" : ""}"
+        JSON.parse(res.body)["operation"].to_s
     end
 
     struct Cluster
-        property server_name, enabled, member_config
-
-        def initialize(@server_name : String, @enabled : Bool, @member_config : Array(MemberConfig))
-        end
+        JSON.mapping(
+            server_name: String,
+            enabled: Bool,
+            member_config: Array(MemberConfig)
+        )
     end
 
     struct MemberConfig
-        property entity, name, key, value, description
+        JSON.mapping(
+            entity: String,
+            name: String,
+            key: String,
+            value: String?,
+            description: String?,
+        )
 
-        def initialize(@entity : String, @name : String, @key : String, @value : String, @description : String)
+        def initialize(@entity, @name, @key, @value)
         end
     end
 
     struct Member
-        property server_name, url, database, status, message
-
-        def initialize(@server_name : String, @url : String, @database : Bool, @status : String, @message : String)
-        end
+        JSON.mapping(
+            server_name: String,
+            url: String,
+            database: Bool,
+            status: String,
+            message: String
+        )
     end
 end

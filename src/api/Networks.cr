@@ -12,44 +12,80 @@ class Networks
         l
     end
 
+    def create(name : String, description : String, config : Hash(String, String)) # POST /1.0/networks
+        payload = { "name" => name, "description" => description, "config" => config }
+        @lxd.not_nil!.post "/1.0/networks", payload.to_json
+    end
+
     def get(name : String) : Network # GET /1.0/networks/<name>
         json = JSON.parse @lxd.not_nil!.get("/1.0/networks/#{name.gsub("/1.0/networks/", "")}").body
         @lxd.not_nil!.logger.debug json
-        net = json["metadata"]
-        config = {} of String => String
-        net["config"].as_h.each { |k, v| config[k] = v.to_s }
-        usedBy = [] of String
-        net["used_by"].as_a.each { |v| usedBy << v.to_s }
-        Network.new(config, net["description"].to_s, net["name"].to_s, net["managed"].as_bool, net["type"] == "bridge" ? NetworkType::Bridge : NetworkType::None, usedBy, self)
+        Network.from_json json["metadata"].to_json
+    end
+
+    def rename(name : String, newName : String) # POST /1.0/networks/<name>
+        res = @lxd.not_nil!.post "/1.0/networks/#{name.gsub("/1.0/networks/","")}", { "name" => newName }
+        raise Common::FailureException.new "Failed to rename a Network!" if res.status_code != 204
+    end
+
+    def replaceInfo(name : String, description : String, config : Hash(String, String)) # PUT /1.0/networks/<name>
+        payload = { "description" => description, "config" => config }
+        @lxd.not_nil!.put "/1.0/networks/#{name.gsub("/1.0/networks/","")}", payload.to_json
+    end
+
+    def updateInfo(name : String, description : String? = nil, config : Hash(String, String)? = nil) # PATCH /1.0/networks/<name>
+        payload = {} of String => String | Hash(String, String)
+        payload["description"] = description if !description.nil?
+        payload["config"] = config if !config.nil?
+        @lxd.not_nil!.patch "/1.0/networks/#{name.gsub("/1.0/networks/","")}", payload.to_json if !payload.empty?
+    end
+
+    def delete(name : String) # DELETE /1.0/networks/<name>
+        res = @lxd.not_nil!.delete "/1.0/networks/#{name.gsub("/1.0/networks/","")}"
+        raise Common::FailureException.new "Failed to delete a Network!" if res.status_code != 202
     end
 
     def getState(name : String) : NetworkState # GET /1.0/networks/<name>/state
         json = JSON.parse @lxd.not_nil!.get("/1.0/networks/#{name.gsub("/1.0/networks/", "")}/state").body
         @lxd.not_nil!.logger.debug json
-        state = json["metadata"]
-        add = [] of NetworkAddress
-        state["addresses"].as_a.each { |a| add << NetworkAddress.new(a["family"] == "inet6" ? Socket::Family::INET6 : Socket::Family::INET, a["address"].to_s, a["netmask"].to_s.to_i16, a["scope"].to_s) }
-        count = {} of String => Int64
-        state["counters"].as_h.each { |k, v| count[k] = v.as_i64 }
-        ty = state["type"] == "broadcast" ? NetworkStateType::Broadcast : NetworkStateType::None
-        NetworkState.new(add, count, state["hwaddr"].to_s, "", state["mtu"].as_i, state["state"].to_s, ty)
+        NetworkState.from_json json["metadata"].to_json
     end
 
     enum NetworkType # @ToDo: Add others
         None
         Bridge
         Physical
+        Loopback
     end
 
     struct Network
-        property config, description,  name, managed, type, used_by
-        @net : Networks
-    
-        def initialize(@config : Hash(String, String), @description : String, @name : String, @managed : Bool, @type : NetworkType, @used_by : Array(String), @net : Networks)
-        end
+        JSON.mapping(
+            config: Hash(String, String),
+            description: String,
+            name: String,
+            managed: Bool,
+            type: NetworkType,
+            used_by: Array(String)
+        )
 
         def getState
-            @net.getState @name
+            LXDSocket.i.not_nil!.networks.getState @name
+        end
+
+        def rename(newName : String)
+            LXDSocket.i.not_nil!.networks.rename @name, newName
+        end
+
+        def replaceInfo(description : String, config : Hash(String, String))
+            LXDSocket.i.not_nil!.networks.replaceInfo @name, description, config
+        end
+
+        def updateInfo(description : String? = nil, config : Hash(String, String)? = nil)
+            LXDSocket.i.not_nil!.networks.updateInfo @name, description, config
+        end
+
+        def delete
+            LXDSocket.i.not_nil!.networks.delete @name
         end
     end
 
@@ -58,17 +94,24 @@ class Networks
         Broadcast
     end
 
-    struct NetworkState # @ToDo: Move to Common (maybe?)
-        property addressses, counters, hwaddr, host_name, mtu, state, type
-
-        def initialize(@addresses : Array(NetworkAddress), @counters : Hash(String, Int64), @hwaddr : String, @host_name : String, @mtu : Int32, @state : String, @type : NetworkStateType)
-        end
+    struct NetworkState
+        JSON.mapping(
+            addresses: Array(NetworkAddress),
+            counters: Hash(String, UInt64),
+            hwaddr: String,
+            host_name: {type: String, default: ""},
+            mtu: UInt32,
+            state: String,
+            type: NetworkStateType
+        )
     end
 
     struct NetworkAddress
-        property family, address, netmask, scope
-
-        def initialize(@family : Socket::Family, @adress : String, @netmask : Int16, @scope : String)
-        end
+        JSON.mapping(
+            family: Socket::Family,
+            address: String,
+            netmask: String,
+            scope: String
+        )
     end
 end

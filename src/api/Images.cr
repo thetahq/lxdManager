@@ -12,24 +12,50 @@ class Images
         l
     end
 
+    def create(aliases : Array(Alias), source : Source, properties : ImageProperties? = nil, public : Bool = false, filename : String? = nil, auto_udate : Bool = false,  compression_algorithm : String? = nil) : String # POST /1.0/images
+        payload = {} of String => Array(Alias) | Source | ImageProperties | String | Bool
+        payload["aliases"] = aliases
+        payload["source"] = source
+        payload["properties"] = properties if !properties.nil?
+        payload["public"] = public if public
+        payload["filaname"] = filename if !filename.nil?
+        payload["auto_udate"] = auto_udate if auto_udate
+        payload["compression_algorithm"] = compression_algorithm if !compression_algorithm.nil?
+        res = @lxd.not_nil!.post "/1.0/images", payload.to_json
+        JSON.parse(res.body)["operation"].to_s
+    end
+
     def get(fingerprint : String) : Image # GET /1.0/images/<fingerprint>
         res = @lxd.not_nil!.get "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}"
         json = JSON.parse res.body
         @lxd.not_nil!.logger.debug json
-        img = json["metadata"]
-        fingerprint = img["fingerprint"].to_s
-        als = [] of Alias
-        img["aliases"].as_a.each { |a| als << Alias.new(a["name"].to_s, a["description"].to_s, fingerprint, self) }
-        p = img["properties"]
-        pro = ImageProperties.new(p["architecture"].to_s, p["description"].to_s, p["os"].to_s, p["release"].to_s)
-        up = img["update_source"]
-        update = UpdateSource.new(up["server"].to_s, up["protocol"].to_s, up["certificate"].to_s, up["alias"].to_s)
-        cat = Time::Format::YAML_DATE.parse? img["created_at"].to_s
-        eat = Time::Format::YAML_DATE.parse? img["expires_at"].to_s
-        luat = Time::Format::YAML_DATE.parse? img["last_used_at"].to_s
-        uat = Time::Format::YAML_DATE.parse? img["uploaded_at"].to_s
-        Image.new(als, img["architecture"].to_s, img["auto_update"].as_bool, img["cached"].as_bool, fingerprint, img["filename"].to_s, pro, update, img["public"].as_bool, img["size"].as_i64, cat.nil? ? Time.new : cat, eat.nil? ? Time.new : eat, luat.nil? ? Time.new : luat, uat.nil? ? Time.new : uat)
+        Image.from_json json["metadata"].to_json
     end
+
+    def replaceInfo(fingerprint : String, auto_update : Bool, properties : ImageProperties, public : Bool) # PUT /1.0/images/<fimgerprint>
+        payload = { "auto_update" => auto_update, "properties" => properties, "public" => public }
+        @lxd.not_nil!.post "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}", payload.to_json
+    end
+    
+    def updateInfo(fingerprint : String, auto_update : Bool? = nil, properties : ImageProperties? = nil, public : Bool? = nil) # PATCH /1.0/images/<fingerprint>
+        payload = {} of String => Bool | ImageProperties
+        payload["auto_update"] = auto_update if !auto_update.nil?
+        payload["properties"] = properties if !properties.nil?
+        payload["public"] = public if !public.nil?
+        @lxd.not_nil!.patch "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}", payload.to_json if !payload.empty?
+    end
+
+    def delete(fingerprint : String) # DELETE /1.0/images/<fingerprint>
+        res = @lxd.not_nil!.delete "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}"
+        raise Common::FailureException.new "Failed to delete the image!" if res.status_code != 202
+    end
+
+    def refresh(fingerprint : String) : String # POST /1.0/images/<fingerprint>/refresh
+        res = @lxd.not_nil!.post "/1.0/images/#{fingerprint.gsub("/1.0/images/", "")}/refresh", ""
+        JSON.parse(res.body)["operation"].to_s
+    end
+
+    #S Aliases
 
     def getAliasList : Array(String) # GET /1.0/images/aliases 
         l = [] of String
@@ -40,22 +66,20 @@ class Images
     end
 
     def addAlias(name : String, description : String, target : String) # POST /1.0/images/aliases
-        a = { "name" => name, "description" => description, "target" => target.gsub("/1.0/images/", "") }
-        @lxd.not_nil!.logger.debug a.to_json
-        res = @lxd.not_nil!.post "/1.0/images/aliases", a.to_json
-        raise Common::NotFoundException.new "Image fingerptint not found!" if res.status_code == 404
+        payload = { "name" => name, "description" => description, "target" => target.gsub("/1.0/images/", "") }
+        @lxd.not_nil!.logger.debug payload.to_json
+        @lxd.not_nil!.post "/1.0/images/aliases", payload.to_json
     end
 
     def getAlias(name : String) : Alias # GET /1.0/images/aliases/<name>
-        res = @lxd.not_nil!.get "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
-        json = JSON.parse res.body
-        @lxd.not_nil!.logger.debug json
-        a = json["metadata"]
-        Alias.new(a["name"].to_s, a["description"].to_s, a["target"].to_s, self)
+       res = @lxd.not_nil!.get "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
+       json = JSON.parse res.body
+       @lxd.not_nil!.logger.debug json
+       Alias.from_json json["metadata"].to_json
     end
 
     def renameAlias(currentName : String, newName : String)
-        res = @lxd.not_nil!.post "/1.0/images/aliases/#{currentName.gsub("/1.0/images/aliases/","")}", { "name" => newName }.to_json
+        @lxd.not_nil!.post "/1.0/images/aliases/#{currentName.gsub("/1.0/images/aliases/","")}", { "name" => newName }.to_json
     end
 
     def updateAlias(name : String, description : String = "", target : String = "") # PATCH /1.0/images/aliases/<name>
@@ -63,46 +87,127 @@ class Images
         payload = {} of String => String
         payload["description"] = description if description != ""
         payload["target"] = target if target != ""
-        res = @lxd.not_nil!.patch "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}", payload.to_json
+        @lxd.not_nil!.patch "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}", payload.to_json if !payload.empty?
     end
 
     def deleteAlias(name : String) # DELETE /1.0/images/aliases/<name>
-        res = @lxd.not_nil!.delete "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
+        @lxd.not_nil!.delete "/1.0/images/aliases/#{name.gsub("/1.0/images/aliases/","")}"
     end
 
-    struct Image
-        property aliases, architecture, auto_update, cached, fingerprint, filename, properties, update_source, public, size, created_at, expires_at, last_used_at, uploaded_at
+    #S Images and Aliases Structs
 
-        def initialize(@aliases : Array(Alias), @architecture : String, @auto_update : Bool, @cached : Bool, @fingerprint : String, @filename : String, @properties : ImageProperties, @update_source : UpdateSource, @public : Bool, @size : Int64, @created_at : Time, @expires_at : Time, @last_used_at : Time, @uploaded_at : Time)
+    struct Image
+        JSON.mapping(
+            aliases: Array(Alias), 
+            architecture: String, 
+            auto_update: Bool, 
+            cached: Bool, 
+            fingerprint: String, 
+            filename: String, 
+            properties: ImageProperties, 
+            update_source: UpdateSource, 
+            public: Bool, 
+            size: Int64, 
+            created_at: Time, 
+            expires_at: Time, 
+            last_used_at: Time, 
+            uploaded_at: Time
+        )
+
+        def delete
+            LXDSocket.i.not_nil!.images.delete @fingerprint
+        end
+
+        def refresh : String
+            LXDSocket.i.not_nil!.images.refresh @fingerprint
+        end
+
+        def replaceInfo(auto_update : Bool, properties : ImageProperties, public : Bool)
+            LXDSocket.i.not_nil!.images.replaceInfo @fingerprint, auto_update, properties, public
+        end
+
+        def updateInfo(auto_update : Bool? = nil, properties : ImageProperties? = nil, public : Bool? = nil)
+            LXDSocket.i.not_nil!.images.updateInfo @fingerprint, auto_update, properties, public
         end
     end
 
     struct ImageProperties
-        property architecture, description, os, release
-
-        def initialize(@architecture : String, @description : String, @os : String, @release : String)
-        end
+        JSON.mapping(
+            architecture: String?, 
+            description: String?, 
+            os: String?,
+            release: String?
+        )
     end
 
     struct UpdateSource
-        property server, protocol, certificate, "alias"
-
-        def initialize(@server : String, @protocol : String, @certificate : String, @alias : String)
-        end
+        JSON.mapping(
+            server: String,
+            protocol: String,
+            certificate: String,
+            "alias": String
+        )
     end
 
     struct Alias
-        property name, description, target
+        JSON.mapping(
+            name: String,
+            description: String,
+            target: String
+        )
 
-        def initialize(@name : String, @description : String, @target : String, @img : Images)
+        def initialize(@name, @description, @target = "")
         end
 
         def delete
-            @img.deleteAlias @name
+            LXDSocket.i.not_nil!.images.deleteAlias @name
         end
 
         def rename(newName : String)
-            @img.renameAlias @name, newName
+            LXDSocket.i.not_nil!.images.renameAlias @name, newName
+        end
+    end
+
+    abstract struct Source
+    end
+
+    struct ImageSource < Source
+        JSON.mapping(
+            type: String,
+            mode: String,
+            server: String,
+            protocol: String,
+            secret: String?,
+            certificate: String?,
+            fingerprint: String?,
+            "alias": String?
+        )
+
+        def initialize(@server, @secret : String? = nil,@certificate : String? = nil, @fingerprint : String? = nil, @alias : String? = nil, @protocol : String = "lxd")
+            @type = "image"
+            @mode = "pull"
+        end
+    end
+
+    struct ContainerSource < Source
+        JSON.mapping(
+            type: String,
+            name: String
+        )
+
+        def initialize(@name)
+            @type = "container"
+        end
+    end
+
+    struct URLSource < Source
+        JSON.mapping(
+            type: String,
+            url: String
+        )
+
+        def initialize(@url)
+            @type = "url"
         end
     end
 end
