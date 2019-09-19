@@ -12,8 +12,10 @@ class Containers
         l
     end
 
-    def create() # POST /1.0/containers @ToDo: Later xD
-        #
+    def create(name : String, architecture : String, profiles : Array(String), ephemeral : Bool, config : Hash(String, String), devices : Hash(String, Common::Device), source : Source) : String # POST /1.0/containers
+        payload = { "name" => name, "architecture" => architecture, "profiles" => profiles, "ephemeral" => ephemeral, "config" => config, "devices" => devices, "source" => source }
+        res = @lxd.not_nil!.post "/1.0/containers", payload.to_s
+        JSON.parse(res.body)["operation"].to_s
     end
 
     def get (name : String) : Container # GET /1.0/containers/<name>
@@ -155,6 +157,105 @@ class Containers
     struct Stop < State
         def initialize(@timeout : UInt16 = 30, @force : Bool = false, @stateful : Bool = false)
             @action = "stop"
+        end
+    end
+
+    abstract struct Source
+    end
+
+    struct NoneSource < Source
+        JSON.mapping( type: String )
+
+        def initialize
+            @type = "none"
+        end
+    end
+
+    struct ImageAliasSource < Source
+        JSON.mapping(
+            type: String,
+            "alias": String
+        )
+
+        def initialize(@alias)
+            @type = "image"
+        end
+    end
+
+    struct ImageFingerprintSource < Source
+        JSON.mapping(
+            type: String,
+            fingerprint: String
+        )
+
+        def initialize(@fingerprint)
+            @type = "image"
+        end
+    end
+
+    struct ImagePropertiesSource < Source
+        JSON.mapping(
+            type: String,
+            properties: Images::ImageProperties
+        )
+
+        def initialize(@properties)
+            @type = "image"
+        end
+    end
+
+    struct CopySource < Source
+        JSON.mapping(
+            type: String,
+            container_only: Bool,
+            source: String
+        )
+
+        def initialize(@source, @container_only : Bool = true)
+            @type = "copy"
+        end
+    end
+
+    struct PullMigrationSource < Source
+        JSON.mapping(
+            type: String,
+            mode: String,
+            operation: String,
+            certificate: {type: String, nilable: true},
+            "base_image": {type: String, nilable: true},
+            container_only: Bool,
+            secrets: Secrets
+        )
+
+        def initialize(@operation, @secrets, @container_only : Bool = true, @certificate : String? = nil, @base_image : String? = nil)
+            @type = "migration"
+            @mode = "pull"
+        end
+
+        struct Secrets
+            JSON.mapping(
+                control: String,
+                criu: String,
+                fs: String
+            )
+
+            def initialize(@control, @criu, @fs)
+            end
+        end
+    end
+
+    struct PushMigrationSource < Source
+        JSON.mapping(
+            type: String,
+            mode: String,
+            "base_image": {type: String, nilable: true},
+            live: Bool,
+            container_only: Bool
+        )
+
+        def initialize(@live : Bool = true, @container_only : Bool = true, @base_image : String = nil)
+            @type = "migration"
+            @mode = "push"
         end
     end
 end

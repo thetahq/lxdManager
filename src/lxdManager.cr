@@ -4,6 +4,8 @@ require "logger"
 require "socket"
 require "toml"
 require "./lxdSocket"
+require "./RequestManager"
+require "./requests/**"
 
 module LxdManager
   VERSION = "0.1.0"
@@ -29,7 +31,7 @@ module LxdManager
       puts "LXDManager v#{VERSION}"
       exit
     end
-    parser.on "-h", "--help", "Show this message" do 
+    parser.on "-h", "--help", "Show this message" do
       puts parser
       exit
     end
@@ -68,6 +70,7 @@ module LxdManager
     log.debug "Found leftover socket! Deleting..."
     FileUtils.rm SERVER_SOCKET_PATH
   end
+  socketRM = RequestManager.new lxd
   server = UNIXServer.new SERVER_SOCKET_PATH
   log.debug "Init complete!"
 
@@ -83,7 +86,7 @@ module LxdManager
   # None
   # log.info lxd.containers.getList
   # c = {} of String => String
-  # lxd.networks.getList.each do |n| 
+  # lxd.networks.getList.each do |n|
   #   net = lxd.networks.get(n)
   #   log.info net
   #   log.info net.getState if net.managed
@@ -102,20 +105,10 @@ module LxdManager
           next if mess.nil?
           log.debug "SOC: Received message: #{mess}"
           begin
-            json = JSON.parse mess
-            if json.dig?("type").to_s.downcase == "get" && json.dig?("request") != nil
-              req = json["request"]
-              if req.dig?("path") != nil
-                path = req["path"].to_s
-                client.send lxd.get(path).body
-              else
-                client.send({ "error" => "Invalid request! No path!" }.to_json)
-              end
-            else
-              client.send({ "error" => "No type or request!" }.to_json)
-            end
-          rescue
-            client.send({ "error" => "Invalid message!" }.to_json)
+            sm = RequestManager::SocketMessage.from_json mess
+            socketRM.handle sm, client
+          rescue e
+            client.send({ "status" => "error", "error" => e.to_s }.to_json)
           end
         end
       end

@@ -138,6 +138,9 @@ class Images
             os: String?,
             release: String?
         )
+
+        def initialize(@architecture : String? = nil, @description : String? = nil, @os : String? = nil, @release : String? = nil)
+        end
     end
 
     struct UpdateSource
